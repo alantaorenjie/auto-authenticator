@@ -102,7 +102,7 @@ function createCard(account, index) {
       </div>
     </div>
     <div class="card-code-row">
-      <span class="card-code" data-action="copy">
+      <span class="card-code">
         <span class="code-part1">${codePart1}</span>&thinsp;<span class="code-part2">${codePart2}</span>
       </span>
       <div class="code-progress">
