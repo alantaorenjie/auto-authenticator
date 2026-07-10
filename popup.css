@@ -319,6 +319,19 @@ body {
   height: 36px;
 }
 
+.code-progress-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  pointer-events: none;
+  z-index: 1;
+}
+
 .code-progress svg {
   transform: rotate(-90deg);
 }

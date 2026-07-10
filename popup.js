@@ -106,6 +106,7 @@ function createCard(account, index) {
         <span class="code-part1">${codePart1}</span>&thinsp;<span class="code-part2">${codePart2}</span>
       </span>
       <div class="code-progress">
+        <span class="code-progress-text">30</span>
         <svg width="36" height="36" viewBox="0 0 36 36">
           <circle class="code-progress-bg" cx="18" cy="18" r="15"/>
           <circle class="code-progress-bar" cx="18" cy="18" r="15"
@@ -263,9 +264,11 @@ async function updateCodes() {
 
       // Update progress circle
       const circle = card.querySelector('.code-progress-bar');
+      const progressText = card.querySelector('.code-progress-text');
       const circumference = 2 * Math.PI * 15;
       const offset = circumference * (1 - progress);
       circle.style.strokeDashoffset = offset;
+      progressText.textContent = remaining;
 
       // Color based on time remaining
       circle.classList.remove('warning', 'critical');
