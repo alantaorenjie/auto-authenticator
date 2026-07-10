@@ -90,12 +90,14 @@ async function handleAddAccount() {
     return;
   }
 
+  const maxOrder = accounts.reduce((m, a) => Math.max(m, a.order || a.createdAt || 0), 0);
   const newAccount = {
     id: Date.now().toString(),
     issuer: issuer || '未知',
     account: accountName || '',
     secret: secret,
     pinned: false,
+    order: maxOrder + 1000,
     createdAt: Date.now()
   };
 
@@ -134,7 +136,8 @@ async function handleExport() {
       issuer: a.issuer,
       account: a.account,
       secret: a.secret,
-      pinned: a.pinned || false
+      pinned: a.pinned || false,
+      order: a.order || 0
     }))
   };
 
@@ -164,14 +167,18 @@ async function handleImport(e) {
     }
 
     let imported = 0;
+    const maxOrder = accounts.reduce((m, a) => Math.max(m, a.order || a.createdAt || 0), 0);
+    let orderOffset = maxOrder;
     for (const item of data.accounts) {
       if (item.secret) {
+        orderOffset += 1000;
         accounts.push({
           id: Date.now().toString() + Math.random().toString(36).substring(2),
           issuer: item.issuer || '未知',
           account: item.account || '',
           secret: item.secret.toUpperCase().replace(/[\s-]/g, ''),
           pinned: item.pinned || false,
+          order: orderOffset,
           createdAt: Date.now()
         });
         imported++;

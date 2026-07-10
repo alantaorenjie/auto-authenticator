@@ -35,6 +35,8 @@ async function saveAccounts() {
 }
 
 // --- Render ---
+let draggedId = null;
+
 function renderAccounts() {
   // Remove old cards (keep empty state)
   document.querySelectorAll('.account-card').forEach(el => el.remove());
@@ -42,7 +44,7 @@ function renderAccounts() {
   const sorted = [...accounts].sort((a, b) => {
     if (a.pinned && !b.pinned) return -1;
     if (!a.pinned && b.pinned) return 1;
-    return (b.createdAt || 0) - (a.createdAt || 0);
+    return (a.order || a.createdAt || 0) - (b.order || b.createdAt || 0);
   });
 
   if (sorted.length === 0) {
@@ -63,7 +65,7 @@ function renderAccounts() {
 
 function createCard(account, index) {
   const card = document.createElement('div');
-  card.className = 'account-card' + (editMode ? ' edit-mode' : '');
+  card.className = 'account-card';
   card.dataset.id = account.id || index;
 
   const displayIssuer = account.issuer || '未知';
@@ -75,6 +77,13 @@ function createCard(account, index) {
 
   card.innerHTML = `
     <div class="card-header">
+      <span class="card-drag-handle" draggable="true" title="拖动排序">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+          <circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/>
+          <circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/>
+          <circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/>
+        </svg>
+      </span>
       <span class="card-issuer">${escapeHtml(displayIssuer)}</span>
       <div class="card-header-right" style="display:flex;align-items:center;gap:4px;">
         ${editMode ? `
@@ -118,8 +127,59 @@ function createCard(account, index) {
     </div>
   `;
 
-  // Click anywhere on the card to fill (except specific action buttons)
+  // --- Drag-and-Drop ---
+  const handle = card.querySelector('.card-drag-handle');
+
+  handle.addEventListener('dragstart', (e) => {
+    draggedId = card.dataset.id;
+    card.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', card.dataset.id);
+    // Fix ghost image for small popup
+    try {
+      const ghost = card.cloneNode(true);
+      ghost.style.position = 'absolute';
+      ghost.style.top = '-1000px';
+      ghost.style.width = card.offsetWidth + 'px';
+      ghost.style.opacity = '0.7';
+      ghost.style.borderRadius = '8px';
+      document.body.appendChild(ghost);
+      e.dataTransfer.setDragImage(ghost, 20, 20);
+      setTimeout(() => ghost.remove(), 0);
+    } catch {}
+  });
+
+  handle.addEventListener('dragend', () => {
+    card.classList.remove('dragging');
+    document.querySelectorAll('.account-card').forEach(c => c.classList.remove('drag-over'));
+    draggedId = null;
+  });
+
+  // Card-level drop zone
+  card.addEventListener('dragover', (e) => {
+    if (!draggedId || draggedId === card.dataset.id) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    document.querySelectorAll('.account-card').forEach(c => c.classList.remove('drag-over'));
+    card.classList.add('drag-over');
+  });
+
+  card.addEventListener('dragleave', () => {
+    card.classList.remove('drag-over');
+  });
+
+  card.addEventListener('drop', (e) => {
+    e.preventDefault();
+    card.classList.remove('drag-over');
+    if (!draggedId || draggedId === card.dataset.id) return;
+    handleReorder(draggedId, card.dataset.id);
+  });
+
+  // --- Click to fill ---
   card.addEventListener('click', (e) => {
+    // Ignore clicks on the drag handle
+    if (e.target.closest('.card-drag-handle')) return;
+
     const actionBtn = e.target.closest('[data-action]');
     const code = card.querySelector('.card-code').dataset.code;
 
@@ -145,6 +205,33 @@ function createCard(account, index) {
   });
 
   return card;
+}
+
+function handleReorder(fromId, toId) {
+  const fromIdx = accounts.findIndex(a => a.id === fromId);
+  const toIdx = accounts.findIndex(a => a.id === toId);
+  if (fromIdx === -1 || toIdx === -1) return;
+
+  // Move the account in the array
+  const [moved] = accounts.splice(fromIdx, 1);
+  const newToIdx = accounts.findIndex(a => a.id === toId);
+  accounts.splice(newToIdx, 0, moved);
+
+  // Recalculate order values based on current position
+  const sorted = [...accounts].sort((a, b) => {
+    if (a.pinned && !b.pinned) return -1;
+    if (!a.pinned && b.pinned) return 1;
+    return (a.order || a.createdAt || 0) - (b.order || b.createdAt || 0);
+  });
+
+  sorted.forEach((a, i) => {
+    a.order = (i + 1) * 1000;
+  });
+
+  saveAccounts().then(() => {
+    renderAccounts();
+    startUpdates();
+  });
 }
 
 // --- Code Update Loop ---
@@ -346,12 +433,14 @@ async function startScan() {
       }
 
       // Add account
+      const maxOrder = accounts.reduce((m, a) => Math.max(m, a.order || a.createdAt || 0), 0);
       const newAccount = {
         id: Date.now().toString(),
         issuer: parsed.issuer,
         account: parsed.account,
         secret: parsed.secret,
         pinned: false,
+        order: maxOrder + 1000,
         createdAt: Date.now()
       };
 

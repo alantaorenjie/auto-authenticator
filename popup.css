@@ -160,6 +160,49 @@ body {
   border-color: #475569;
 }
 
+/* Drag Handle */
+.card-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--text-muted);
+  cursor: grab;
+  border-radius: 4px;
+  flex-shrink: 0;
+  touch-action: none;
+}
+
+.card-drag-handle:hover {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.card-drag-handle:active {
+  cursor: grabbing;
+}
+
+/* Drag States */
+.account-card.dragging {
+  opacity: 0.4;
+  transform: scale(0.97);
+  border-style: dashed;
+  border-color: var(--text-muted);
+}
+
+.account-card.drag-over {
+  border-color: var(--accent);
+  border-style: dashed;
+  background: rgba(59, 130, 246, 0.08);
+  transform: translateY(2px);
+}
+
+.account-card.drag-over + .account-card {
+  /* Visual gap when a card is being dragged over the one above it */
+  border-top-color: var(--accent);
+}
+
 .account-card.deleting {
   animation: cardOut 0.2s ease-in forwards;
 }
@@ -175,11 +218,12 @@ body {
   }
 }
 
-/* Card Header (issuer row) */
+/* Card Header: drag handle + issuer + right actions */
 .card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 6px;
   margin-bottom: 6px;
 }
 
