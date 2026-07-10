@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>设置 - 身份验证器</title>
+  <link rel="stylesheet" href="popup.css">
+  <style>
+    body {
+      width: 480px;
+      margin: 0 auto;
+      min-height: 100vh;
+      max-height: none;
+      padding-bottom: 32px;
+    }
+
+    #app {
+      max-height: none;
+    }
+
+    .settings-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .settings-header h1 {
+      font-size: 16px;
+      font-weight: 600;
+      flex: 1;
+    }
+
+    .back-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .back-btn:hover {
+      background: var(--bg-card);
+      color: var(--text-primary);
+    }
+
+    .section {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .section-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 12px;
+    }
+
+    .form-group {
+      margin-bottom: 12px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-bottom: 4px;
+    }
+
+    .form-group input {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg-card);
+      color: var(--text-primary);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.15s ease;
+      box-sizing: border-box;
+    }
+
+    .form-group input:focus {
+      border-color: var(--accent);
+    }
+
+    .form-group input::placeholder {
+      color: var(--text-muted);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg-card);
+      color: var(--text-primary);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .btn:hover {
+      background: var(--bg-card-hover);
+      border-color: #475569;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+    }
+
+    .btn-danger {
+      border-color: var(--red);
+      color: var(--red);
+    }
+
+    .btn-danger:hover {
+      background: rgba(239, 68, 68, 0.12);
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .btn-icon {
+      width: 14px;
+      height: 14px;
+    }
+
+    .settings-account-list {
+      margin-top: 8px;
+    }
+
+    .settings-account-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .settings-account-item:last-child {
+      border-bottom: none;
+    }
+
+    .settings-account-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .settings-account-name {
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .settings-account-detail {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 2px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .settings-account-actions {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+      margin-left: 8px;
+    }
+
+    .settings-account-actions button {
+      padding: 4px 8px;
+      font-size: 11px;
+    }
+
+    .empty-accounts {
+      text-align: center;
+      padding: 24px;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: #334155;
+      color: var(--text-primary);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      opacity: 0;
+      transition: all 0.25s ease;
+      pointer-events: none;
+      z-index: 100;
+      box-shadow: 0 4px 12px var(--shadow);
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="settings-header">
+      <button class="back-btn" id="btnBack">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="15 18 9 12 15 6"/>
+        </svg>
+      </button>
+      <h1>设置</h1>
+    </div>
+
+    <!-- Manual Add -->
+    <div class="section">
+      <div class="section-title">手动添加账号</div>
+      <div class="form-group">
+        <label for="addIssuer">服务提供商</label>
+        <input type="text" id="addIssuer" placeholder="例如: GitHub, Aliyun" />
+      </div>
+      <div class="form-group">
+        <label for="addAccount">账号名称 / 邮箱</label>
+        <input type="text" id="addAccount" placeholder="例如: user@example.com" />
+      </div>
+      <div class="form-group">
+        <label for="addSecret">密钥 (Secret Key)</label>
+        <input type="text" id="addSecret" placeholder="Base32 格式密钥" />
+      </div>
+      <button class="btn btn-primary" id="btnAddAccount">
+        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        添加账号
+      </button>
+    </div>
+
+    <!-- Account List -->
+    <div class="section">
+      <div class="section-title">已添加的账号</div>
+      <div id="settingsAccountList" class="settings-account-list">
+        <div class="empty-accounts">暂无账号</div>
+      </div>
+    </div>
+
+    <!-- Backup -->
+    <div class="section">
+      <div class="section-title">数据备份</div>
+      <div class="btn-row">
+        <button class="btn" id="btnExport">
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          导出备份
+        </button>
+        <button class="btn" id="btnImport">
+          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          导入备份
+        </button>
+        <input type="file" id="importFile" accept=".json" style="display:none" />
+      </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+  </div>
+
+  <script type="module" src="settings.js"></script>
+</body>
+</html>
