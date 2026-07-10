@@ -218,6 +218,21 @@ async function handleFill(code) {
       showToast('未找到当前标签页');
       return;
     }
+
+    // Inject content script on-demand (activeTab + scripting permission)
+    // This avoids needing <all_urls> host_permissions
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['content.js']
+      });
+    } catch {
+      // Script may already be injected, that's fine
+    }
+
+    // Give it a moment to initialize, then send the fill message
+    await new Promise(r => setTimeout(r, 50));
+
     const res = await chrome.tabs.sendMessage(tab.id, {
       action: 'fillOTP',
       code
