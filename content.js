@@ -307,6 +307,103 @@ function setNativeValue(element, value) {
   element.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
+// --- Auto-fill on OTP Field Focus ---
+// Automatically fills the first account's TOTP code when an OTP input field receives focus.
+// Uses a 30-second cooldown to avoid repetitive fills.
+
+let lastAutoFillTime = 0;
+const AUTO_FILL_COOLDOWN = 30000; // 30 seconds, matches TOTP refresh
+
+/**
+ * Check if an input element appears to be an OTP field
+ */
+function isOTPInput(el) {
+  if (!el || el.tagName !== 'INPUT') return false;
+  const t = (el.type || '').toLowerCase();
+  if (!['text', 'number', 'tel', ''].includes(t)) return false;
+  const score = scoreInput(el);
+  return score >= 10;
+}
+
+/**
+ * Auto-fill the focused OTP field with the first account's code
+ */
+async function autoFillOnFocus(focusedEl) {
+  const now = Date.now();
+  if (now - lastAutoFillTime < AUTO_FILL_COOLDOWN) return;
+
+  // Don't auto-fill if field already has content
+  if (focusedEl.value && focusedEl.value.length >= 3) return;
+
+  lastAutoFillTime = now;
+
+  try {
+    const res = await chrome.runtime.sendMessage({ action: 'requestAutoFill' });
+    if (!res || !res.code) return;
+
+    const code = res.code;
+    const digits = code.split('');
+
+    // Check if this field is part of a digit group
+    const allInputs = document.querySelectorAll('input');
+    const digitGroup = findDigitGroup(allInputs);
+    let filled = false;
+
+    if (digitGroup) {
+      // Multi-digit input group (6 separate inputs)
+      // Find which input in the group is focused
+      const idx = digitGroup.indexOf(focusedEl);
+      if (idx !== -1) {
+        // Fill from this position onward
+        for (let i = idx; i < 6 && i - idx < digits.length; i++) {
+          const digitIdx = i - idx;
+          if (digitGroup[i]) {
+            setNativeValue(digitGroup[i], digits[digitIdx]);
+            digitGroup[i].dispatchEvent(new Event('input', { bubbles: true }));
+            digitGroup[i].dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }
+        filled = true;
+      }
+    }
+
+    if (!filled) {
+      // Single input field: fill the entire code
+      setNativeValue(focusedEl, code);
+      focusedEl.dispatchEvent(new Event('input', { bubbles: true }));
+      focusedEl.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  } catch {
+    // Background not available or no accounts
+  }
+}
+
+// Listen for focus events on potential OTP fields
+document.addEventListener('focusin', (e) => {
+  const el = e.target;
+  if (!isOTPInput(el)) return;
+  autoFillOnFocus(el);
+});
+
+// Also detect dynamically added OTP fields via MutationObserver
+const observer = new MutationObserver(() => {
+  // Check if there are new OTP fields that should trigger auto-fill
+  // We only act when an input already has focus
+  const focused = document.activeElement;
+  if (focused && isOTPInput(focused) && !focused.value) {
+    const now = Date.now();
+    if (now - lastAutoFillTime >= AUTO_FILL_COOLDOWN) {
+      autoFillOnFocus(focused);
+    }
+  }
+});
+
+observer.observe(document.body, {
+  childList: true,
+  subtree: true,
+  attributes: false
+});
+
 // Listen for messages from the popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.action) {

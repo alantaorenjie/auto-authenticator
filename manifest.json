@@ -20,9 +20,51 @@
     "service_worker": "background.js",
     "type": "module"
   },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.aliyun.com/*",
+        "https://*.alibabacloud.com/*",
+        "https://*.microsoft.com/*",
+        "https://*.microsoftonline.com/*",
+        "https://*.live.com/*",
+        "https://*.binance.com/*",
+        "https://*.google.com/*",
+        "https://*.tencent.com/*",
+        "https://*.qcloud.com/*",
+        "https://*.tencentcloud.com/*",
+        "https://*.huawei.com/*",
+        "https://*.huaweicloud.com/*",
+        "https://*.github.com/*",
+        "https://*.gitlab.com/*",
+        "https://*.amazon.com/*",
+        "https://*.cloudflare.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
   "permissions": [
     "storage",
     "activeTab",
     "scripting"
+  ],
+  "host_permissions": [
+    "https://*.aliyun.com/*",
+    "https://*.alibabacloud.com/*",
+    "https://*.microsoft.com/*",
+    "https://*.microsoftonline.com/*",
+    "https://*.live.com/*",
+    "https://*.binance.com/*",
+    "https://*.google.com/*",
+    "https://*.tencent.com/*",
+    "https://*.qcloud.com/*",
+    "https://*.tencentcloud.com/*",
+    "https://*.huawei.com/*",
+    "https://*.huaweicloud.com/*",
+    "https://*.github.com/*",
+    "https://*.gitlab.com/*",
+    "https://*.amazon.com/*",
+    "https://*.cloudflare.com/*"
   ]
 }

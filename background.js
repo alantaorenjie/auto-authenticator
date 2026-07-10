@@ -1,7 +1,9 @@
 /**
  * Background service worker for Authenticator Extension
- * Handles tab capture, messaging relay, and alarms
+ * Handles tab capture, messaging relay, TOTP generation for auto-fill
  */
+
+import { generateTOTP } from './totp.js';
 
 // Storage key for accounts
 const STORAGE_KEY = 'authenticator_accounts';
@@ -44,6 +46,24 @@ async function captureVisibleTab() {
   return dataUrl;
 }
 
+/**
+ * Generate TOTP code for the first account (sorted by pin + order)
+ * Used for automatic fill when an OTP field is focused
+ */
+async function getFirstAccountCode() {
+  const accounts = await getAccounts();
+  if (accounts.length === 0) return null;
+
+  const sorted = [...accounts].sort((a, b) => {
+    if (a.pinned && !b.pinned) return -1;
+    if (!a.pinned && b.pinned) return 1;
+    return (a.order || a.createdAt || 0) - (b.order || b.createdAt || 0);
+  });
+
+  const code = await generateTOTP(sorted[0].secret);
+  return { code, issuer: sorted[0].issuer };
+}
+
 // Message handler
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.action) {
@@ -59,6 +79,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       captureVisibleTab()
         .then(dataUrl => sendResponse({ dataUrl }))
         .catch(err => sendResponse({ error: err.message }));
+      return true;
+
+    case 'requestAutoFill':
+      getFirstAccountCode()
+        .then(result => sendResponse(result))
+        .catch(() => sendResponse({ code: null }));
       return true;
   }
 });
