@@ -326,7 +326,82 @@ function isOTPInput(el) {
 }
 
 /**
- * Auto-fill the focused OTP field with the first account's code
+ * Detect the current login account (email/username) from the page
+ * Looks at various signals: filled inputs, page text, URL patterns, etc.
+ */
+function detectLoginAccount() {
+  const candidates = [];
+
+  // 1. Input fields with email/phone/username that already have values
+  const inputs = document.querySelectorAll('input[type="email"], input[name*="email" i], input[id*="email" i], input[name*="user" i], input[id*="user" i], input[name*="account" i], input[id*="account" i], input[type="tel"][name*="phone" i], input[type="tel"][id*="phone" i], input[name*="手机" i], input[id*="手机" i], input[name*="邮箱" i], input[id*="邮箱" i]');
+  for (const inp of inputs) {
+    if (inp.value && inp.value.length > 3 && inp.value.length < 100) {
+      const style = window.getComputedStyle(inp);
+      if (style.display !== 'none' && style.visibility !== 'hidden') {
+        candidates.push(inp.value.trim());
+      }
+    }
+  }
+
+  // 2. Text nodes showing current user (Chinese sites pattern)
+  const patterns = [
+    /当前[用户账号].*?[：:]\s*(\S+)/i,
+    /欢迎[,，]\s*(\S+)/i,
+    /您好[,，]\s*(\S+)/i,
+    /登录[账号名称].*?[：:]\s*(\S+)/i,
+    /账号[：:]?\s*(\S{3,50})/i,
+    /welcome.*?[,，]\s*(\S+)/i,
+    /signed\s+in\s+as\s+(\S+)/i,
+    /logged\s+in\s+as\s+(\S+)/i,
+    /account[：:]\s*(\S+)/i,
+    /当前身份[：:]\s*(\S+)/i,
+  ];
+
+  // Check visible text in common user-info containers
+  const containers = document.querySelectorAll('.user-info, .user-account, .account-info, .nav-user, .topbar-user, [class*="user" i], [id*="user" i], header, .header, .navbar, .topbar');
+  for (const container of containers) {
+    const text = container.textContent || '';
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match && match[1] && match[1].length > 2) {
+        candidates.push(match[1]);
+      }
+    }
+  }
+
+  // 3. Check document body for user patterns
+  const bodyText = document.body?.textContent || '';
+  for (const pattern of patterns) {
+    const match = bodyText.match(pattern);
+    if (match && match[1] && match[1].length > 2 && match[1].length < 100) {
+      // Avoid false positives — only if near top of page or in visible area
+      const idx = bodyText.indexOf(match[0]);
+      if (idx < 3000) {
+        candidates.push(match[1]);
+      }
+    }
+  }
+
+  // 4. Check localStorage for common keys
+  try {
+    const storageKeys = ['loginAccount', 'userName', 'userEmail', 'account', 'currentAccount', 'loginId', 'user', 'email', 'username'];
+    for (const key of storageKeys) {
+      const val = localStorage.getItem(key);
+      if (val && val.length > 3 && val.length < 100 && /[a-zA-Z0-9@._-]/.test(val)) {
+        candidates.push(val);
+      }
+    }
+  } catch {}
+
+  // Return the most likely candidate (first non-empty, prefer email)
+  for (const c of candidates) {
+    if (c.includes('@')) return c;
+  }
+  return candidates[0] || null;
+}
+
+/**
+ * Auto-fill the focused OTP field with the matching account's code
  */
 async function autoFillOnFocus(focusedEl) {
   const now = Date.now();
@@ -337,8 +412,14 @@ async function autoFillOnFocus(focusedEl) {
 
   lastAutoFillTime = now;
 
+  // Detect the current login account to match against stored accounts
+  const accountHint = detectLoginAccount();
+
   try {
-    const res = await chrome.runtime.sendMessage({ action: 'requestAutoFill' });
+    const res = await chrome.runtime.sendMessage({
+      action: 'requestAutoFill',
+      accountHint
+    });
     if (!res || !res.code) return;
 
     const code = res.code;

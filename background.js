@@ -47,21 +47,56 @@ async function captureVisibleTab() {
 }
 
 /**
- * Generate TOTP code for the first account (sorted by pin + order)
- * Used for automatic fill when an OTP field is focused
+ * Generate TOTP code matching the detected login account, or fall back to first account
+ * @param {string} [hint] - Optional account hint (email/username) detected from the page
  */
-async function getFirstAccountCode() {
+async function getMatchingAccountCode(hint) {
   const accounts = await getAccounts();
   if (accounts.length === 0) return null;
 
-  const sorted = [...accounts].sort((a, b) => {
-    if (a.pinned && !b.pinned) return -1;
-    if (!a.pinned && b.pinned) return 1;
-    return (a.order || a.createdAt || 0) - (b.order || b.createdAt || 0);
-  });
+  let matched = null;
 
-  const code = await generateTOTP(sorted[0].secret);
-  return { code, issuer: sorted[0].issuer };
+  // If we have a hint, try to find a matching account
+  if (hint) {
+    const hl = hint.toLowerCase().trim();
+
+    // Try exact match on account field
+    matched = accounts.find(a => a.account && a.account.toLowerCase() === hl);
+
+    // Try account contains hint (e.g. "user@example.com" contains "user")
+    if (!matched) {
+      matched = accounts.find(a => a.account && a.account.toLowerCase().includes(hl));
+    }
+
+    // Try hint contains account (partial match)
+    if (!matched) {
+      matched = accounts.find(a => a.account && hl.includes(a.account.toLowerCase()));
+    }
+
+    // Try match by local part of email (e.g. "user" from "user@example.com")
+    if (!matched && hl.includes('@')) {
+      const localPart = hl.split('@')[0];
+      matched = accounts.find(a => a.account && a.account.toLowerCase().includes(localPart));
+    }
+
+    // Try match issuer against the hint
+    if (!matched) {
+      matched = accounts.find(a => a.issuer && a.issuer.toLowerCase().includes(hl));
+    }
+  }
+
+  // If no match, use the first account as fallback
+  if (!matched) {
+    const sorted = [...accounts].sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      return (a.order || a.createdAt || 0) - (b.order || b.createdAt || 0);
+    });
+    matched = sorted[0];
+  }
+
+  const code = await generateTOTP(matched.secret);
+  return { code, issuer: matched.issuer, account: matched.account };
 }
 
 // Message handler
@@ -82,7 +117,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
 
     case 'requestAutoFill':
-      getFirstAccountCode()
+      getMatchingAccountCode(message.accountHint)
         .then(result => sendResponse(result))
         .catch(() => sendResponse({ code: null }));
       return true;
