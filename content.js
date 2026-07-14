@@ -418,7 +418,8 @@ async function autoFillOnFocus(focusedEl) {
   try {
     const res = await chrome.runtime.sendMessage({
       action: 'requestAutoFill',
-      accountHint
+      accountHint,
+      hostname: window.location.hostname
     });
     if (!res || !res.code) return;
 
