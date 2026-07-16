@@ -9,8 +9,9 @@ const OTP_PATTERNS = [
   'authenticator', 'token', 'verification',
   'vercode', 'verify', 'auth', 'two.?factor',
   'one.?time', 'pass.?code', 'security.?code',
-  '动态码', '二次验证', '两步验证',
-  '身份验证', 'mfa', '两步认证'
+  '动态码', '动态安全码', '二次验证', '两步验证',
+  '身份验证', '身份验证器', 'mfa', '两步认证',
+  '安全密钥', 'google.?authenticator'
 ];
 
 // Broader keywords for fallback detection
@@ -31,10 +32,27 @@ function matchesAny(text, patterns) {
 }
 
 /**
+ * Collect all inputs on the page, including those inside Shadow DOM
+ */
+function collectAllInputs(root = document) {
+  let inputs = [];
+  // Standard DOM inputs
+  inputs = [...root.querySelectorAll('input, textarea')];
+  // Penetrate Shadow DOM roots
+  const allElements = root.querySelectorAll('*');
+  for (const el of allElements) {
+    if (el.shadowRoot) {
+      inputs = inputs.concat(collectAllInputs(el.shadowRoot));
+    }
+  }
+  return inputs;
+}
+
+/**
  * Get all visible input elements on the page
  */
 function getVisibleInputs() {
-  const all = document.querySelectorAll('input, textarea');
+  const all = collectAllInputs();
   const visible = [];
   for (const el of all) {
     if (el.type === 'hidden') continue;
@@ -168,26 +186,35 @@ function findDigitGroup(allInputs) {
     if (input.type === 'hidden') continue;
     const style = window.getComputedStyle(input);
     if (style.display === 'none' || style.visibility === 'hidden') continue;
-    if (input.offsetParent === null) continue;
+    if (!input.offsetParent || input.offsetParent === null) continue;
 
-    const maxLen = parseInt(input.maxLength, 10) || 1;
-    if (maxLen > 1) continue;
+    // MaxLength check: single-digit inputs typically have maxLength=1 or no maxLength
+    const maxLen = parseInt(input.maxLength, 10);
+    if (!isNaN(maxLen) && maxLen > 2) continue;
 
     // Check width — single-char inputs are usually narrow
     const rect = input.getBoundingClientRect();
-    if (rect.width < 60 && rect.height > 0) {
+    if (rect.width < 80 && rect.height > 0) {
       visible.push(input);
     }
   }
 
   if (visible.length >= 6) {
-    // Check they're siblings in same container
-    const parent = visible[0].parentElement;
-    if (parent) {
-      const siblings = visible.filter(inp => inp.parentElement === parent || parent.contains(inp));
-      // Take the first 6
-      const group = siblings.slice(0, 6);
-      return group;
+    // Sort by position (left to right, top to bottom)
+    visible.sort((a, b) => {
+      const ra = a.getBoundingClientRect();
+      const rb = b.getBoundingClientRect();
+      return ra.top - rb.top || ra.left - rb.left;
+    });
+
+    // Check that the first 6 are in a reasonable area (same row)
+    const first6 = visible.slice(0, 6);
+    const topPos = first6.map(el => el.getBoundingClientRect().top);
+    const avgTop = topPos.reduce((a, b) => a + b, 0) / topPos.length;
+    const allSameRow = topPos.every(t => Math.abs(t - avgTop) < 5);
+
+    if (allSameRow) {
+      return first6;
     }
   }
   return null;
@@ -199,7 +226,7 @@ function findDigitGroup(allInputs) {
  */
 function findOTPField() {
   // 1. Check for six separate digit inputs
-  const allInputs = document.querySelectorAll('input');
+  const allInputs = collectAllInputs();
   const digitGroup = findDigitGroup(allInputs);
   if (digitGroup && digitGroup.length === 6) {
     return { type: 'multi', fields: digitGroup, element: digitGroup[0] };
@@ -273,14 +300,16 @@ function fillOTPCode(code) {
     for (let i = 0; i < 6; i++) {
       if (result.fields[i]) {
         setNativeValue(result.fields[i], digits[i] || '');
-        result.fields[i].dispatchEvent(new Event('input', { bubbles: true }));
         result.fields[i].dispatchEvent(new Event('change', { bubbles: true }));
+        // Focus next empty field
+        if (i < 5 && result.fields[i + 1]) {
+          result.fields[i + 1].focus();
+        }
       }
     }
   } else {
     // Fill the whole code into a single input
     setNativeValue(result.element, code);
-    result.element.dispatchEvent(new Event('input', { bubbles: true }));
     result.element.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
@@ -303,8 +332,13 @@ function setNativeValue(element, value) {
     element.value = value;
   }
 
-  // Dispatch input event for frameworks
-  element.dispatchEvent(new Event('input', { bubbles: true }));
+  // Dispatch native InputEvent for React/Vue frameworks
+  // React uses native event listeners in React 16+, which pick up InputEvent
+  try {
+    element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText' }));
+  } catch {
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+  }
 }
 
 // --- Auto-fill on OTP Field Focus ---
@@ -320,9 +354,28 @@ const AUTO_FILL_COOLDOWN = 30000; // 30 seconds, matches TOTP refresh
 function isOTPInput(el) {
   if (!el || el.tagName !== 'INPUT') return false;
   const t = (el.type || '').toLowerCase();
-  if (!['text', 'number', 'tel', ''].includes(t)) return false;
+  if (!['text', 'number', 'tel', 'password', ''].includes(t)) return false;
+  if (t === 'password') {
+    // Only treat password-type inputs as OTP if they have OTP-specific context
+    const score = scoreInput(el);
+    return score >= 60;
+  }
   const score = scoreInput(el);
-  return score >= 10;
+  if (score >= 10) return true;
+
+  // Broader fallback: inputMode=numeric + maxLength=6 is a strong OTP signal
+  if (el.inputMode === 'numeric') {
+    const ml = parseInt(el.maxLength, 10);
+    if (ml >= 5 && ml <= 8) return true;
+  }
+
+  // Fallback: type="tel" with Chinese OTP context
+  if (el.type === 'tel') {
+    const ctx = getInputContext(el);
+    if (ctx.includes('验证码') || ctx.includes('安全码') || ctx.includes('动态')) return true;
+  }
+
+  return false;
 }
 
 /**
@@ -355,6 +408,8 @@ function detectLoginAccount() {
     /logged\s+in\s+as\s+(\S+)/i,
     /account[：:]\s*(\S+)/i,
     /当前身份[：:]\s*(\S+)/i,
+    /已登录[：:]\s*(\S+)/i,
+    /正在使用[：:]\s*(\S+)/i,
   ];
 
   // Check visible text in common user-info containers
@@ -427,7 +482,7 @@ async function autoFillOnFocus(focusedEl) {
     const digits = code.split('');
 
     // Check if this field is part of a digit group
-    const allInputs = document.querySelectorAll('input');
+    const allInputs = collectAllInputs();
     const digitGroup = findDigitGroup(allInputs);
     let filled = false;
 
@@ -441,8 +496,11 @@ async function autoFillOnFocus(focusedEl) {
           const digitIdx = i - idx;
           if (digitGroup[i]) {
             setNativeValue(digitGroup[i], digits[digitIdx]);
-            digitGroup[i].dispatchEvent(new Event('input', { bubbles: true }));
             digitGroup[i].dispatchEvent(new Event('change', { bubbles: true }));
+            // Focus the next empty field
+            if (i + 1 < 6 && digitGroup[i + 1]) {
+              digitGroup[i + 1].focus();
+            }
           }
         }
         filled = true;
@@ -452,7 +510,6 @@ async function autoFillOnFocus(focusedEl) {
     if (!filled) {
       // Single input field: fill the entire code
       setNativeValue(focusedEl, code);
-      focusedEl.dispatchEvent(new Event('input', { bubbles: true }));
       focusedEl.dispatchEvent(new Event('change', { bubbles: true }));
     }
   } catch {
@@ -468,22 +525,53 @@ document.addEventListener('focusin', (e) => {
 });
 
 // Also detect dynamically added OTP fields via MutationObserver
-const observer = new MutationObserver(() => {
-  // Check if there are new OTP fields that should trigger auto-fill
-  // We only act when an input already has focus
-  const focused = document.activeElement;
-  if (focused && isOTPInput(focused) && !focused.value) {
+// This handles SPA login flows (e.g., Tencent Cloud, Aliyun) where the
+// 2FA step loads dynamically after password verification
+let observerTimer = null;
+const observer = new MutationObserver((mutations) => {
+  // Debounce: coalesce rapid mutations into a single check
+  if (observerTimer) return;
+  observerTimer = setTimeout(() => {
+    observerTimer = null;
+
+    // Strategy 1: If an input is already focused, try to auto-fill
+    const focused = document.activeElement;
+    if (focused && isOTPInput(focused) && !focused.value) {
+      const now = Date.now();
+      if (now - lastAutoFillTime >= AUTO_FILL_COOLDOWN) {
+        autoFillOnFocus(focused);
+        return;
+      }
+    }
+
+    // Strategy 2: Check if a new input element was added to the page
+    const hasNewInput = mutations.some(m =>
+      Array.from(m.addedNodes).some(n =>
+        n.nodeType === 1 && (n.matches?.('input') || n.querySelector?.('input'))
+      )
+    );
+
+    if (!hasNewInput && focused) return;
+
+    // Strategy 3: Scan for visible OTP inputs that appeared dynamically
     const now = Date.now();
     if (now - lastAutoFillTime >= AUTO_FILL_COOLDOWN) {
-      autoFillOnFocus(focused);
+      const inputs = collectAllInputs();
+      for (const input of inputs) {
+        if (isOTPInput(input) && (input.offsetParent !== null || window.getComputedStyle(input).display !== 'none')) {
+          autoFillOnFocus(input);
+          break;
+        }
+      }
     }
-  }
+  }, 300);
 });
 
 observer.observe(document.body, {
   childList: true,
   subtree: true,
-  attributes: false
+  attributes: true,
+  attributeFilter: ['style', 'class', 'type', 'inputmode']
 });
 
 // Listen for messages from the popup

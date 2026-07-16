@@ -89,12 +89,29 @@ function matchByHostname(accounts, hostname) {
   if (!hostname) return null;
 
   const hl = hostname.toLowerCase();
+  const hlParts = hl.split('.');
 
   // Find matching service names
   const serviceNames = [];
   for (const [domain, names] of DOMAIN_SERVICE_MAP) {
-    if (hl.includes(domain) || domain.includes(hl.split('.')[0])) {
+    // Forward match: hostname contains the full domain
+    // e.g., login.tencent.com → matches 'tencent.com'
+    if (hl.includes(domain)) {
       serviceNames.push(...names);
+      continue;
+    }
+
+    // Reverse match: domain is a subdomain of the hostname's primary domain
+    // e.g., domain='aws.amazon.com' for hostname='amazon.com'
+    // Compare the last two segments to avoid false positives like
+    // 'alibabacloud.com' matching on 'cloud.tencent.com'
+    const domainParts = domain.split('.');
+    if (hlParts.length >= 2 && domainParts.length >= 2) {
+      const hlMain = hlParts.slice(-2).join('.');
+      const domainMain = domainParts.slice(-2).join('.');
+      if (hlMain === domainMain) {
+        serviceNames.push(...names);
+      }
     }
   }
 
